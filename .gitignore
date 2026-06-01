@@ -14,6 +14,10 @@ coverage/
 # Tool caches (Vite / Vitest)
 .vite/
 
+# Generated e2e fixture bundles (esbuild output; the source is app.tsx)
+packages/*/e2e/fixtures/app.js
+packages/*/e2e/fixtures/app.js.map
+
 # Playwright
 test-results/
 playwright-report/
