@@ -54,11 +54,15 @@ function track() {
   return { inputs, sink: (input: GestureInput) => inputs.push(input) }
 }
 
+const noMods = { shift: false, alt: false, meta: false, ctrl: false }
+
+const getSpace = () => space
+
 describe('PointerSource', () => {
   it('begins on a primary pointerdown, capturing and converting to container space', () => {
     const dom = fakeElement()
     const { inputs, sink } = track()
-    new PointerSource(dom.element, space, sink)
+    new PointerSource(dom.element, getSpace, sink)
 
     expect(dom.style.touchAction).toBe('none')
     const event = pointer()
@@ -78,7 +82,7 @@ describe('PointerSource', () => {
   it('ignores non-primary buttons, non-primary pointers, and a second pointer', () => {
     const dom = fakeElement()
     const { inputs, sink } = track()
-    new PointerSource(dom.element, space, sink)
+    new PointerSource(dom.element, getSpace, sink)
 
     dom.dispatch('pointerdown', pointer({ button: 1 }))
     dom.dispatch('pointerdown', pointer({ isPrimary: false }))
@@ -92,7 +96,7 @@ describe('PointerSource', () => {
   it('forwards moves for the active pointer and ignores others', () => {
     const dom = fakeElement()
     const { inputs, sink } = track()
-    new PointerSource(dom.element, space, sink)
+    new PointerSource(dom.element, getSpace, sink)
     dom.dispatch('pointerdown', pointer())
 
     dom.dispatch('pointermove', pointer({ clientX: 200, clientY: 150 }))
@@ -110,7 +114,7 @@ describe('PointerSource', () => {
   it('ends on pointerup, releasing capture, and forwards modifier keys', () => {
     const dom = fakeElement()
     const { inputs, sink } = track()
-    new PointerSource(dom.element, space, sink)
+    new PointerSource(dom.element, getSpace, sink)
     dom.dispatch('pointerdown', pointer())
     dom.dispatch('pointerup', pointer({ clientX: 160, clientY: 160, shiftKey: true }))
 
@@ -126,7 +130,7 @@ describe('PointerSource', () => {
   it('ignores a pointerup for a foreign pointer', () => {
     const dom = fakeElement()
     const { inputs, sink } = track()
-    new PointerSource(dom.element, space, sink)
+    new PointerSource(dom.element, getSpace, sink)
     dom.dispatch('pointerdown', pointer())
     dom.dispatch('pointerup', pointer({ pointerId: 7 }))
     expect(inputs.some((i) => i.type === 'end')).toBe(false)
@@ -135,7 +139,7 @@ describe('PointerSource', () => {
   it('cancels on pointercancel and ignores a foreign cancel', () => {
     const dom = fakeElement()
     const { inputs, sink } = track()
-    new PointerSource(dom.element, space, sink)
+    new PointerSource(dom.element, getSpace, sink)
     dom.dispatch('pointerdown', pointer())
     dom.dispatch('pointercancel', pointer({ pointerId: 7 })) // foreign, ignored
     dom.dispatch('pointercancel', pointer())
@@ -146,7 +150,7 @@ describe('PointerSource', () => {
   it('cancels on lost capture during a gesture but not after a normal up', () => {
     const dom = fakeElement()
     const { inputs, sink } = track()
-    new PointerSource(dom.element, space, sink)
+    new PointerSource(dom.element, getSpace, sink)
 
     dom.dispatch('pointerdown', pointer())
     dom.dispatch('lostpointercapture', pointer()) // mid-gesture: cancels
@@ -161,7 +165,7 @@ describe('PointerSource', () => {
   it('removes listeners, releases an active capture, and restores touch-action on destroy', () => {
     const dom = fakeElement()
     const { sink } = track()
-    const source = new PointerSource(dom.element, space, sink)
+    const source = new PointerSource(dom.element, getSpace, sink)
     dom.dispatch('pointerdown', pointer())
 
     source.destroy()
@@ -174,8 +178,59 @@ describe('PointerSource', () => {
   it('does not release capture on destroy when no pointer is active', () => {
     const dom = fakeElement()
     const { sink } = track()
-    const source = new PointerSource(dom.element, space, sink)
+    const source = new PointerSource(dom.element, getSpace, sink)
     source.destroy()
     expect(dom.releasePointerCapture).not.toHaveBeenCalled()
+  })
+
+  it('resolves the space at pointerdown and reuses it for the rest of the gesture', () => {
+    // Two different origins; the provider returns the second only after begin.
+    const first = new CoordinateSpace({ containerOrigin: { x: 50, y: 50 }, viewScale: 1 })
+    const second = new CoordinateSpace({ containerOrigin: { x: 0, y: 0 }, viewScale: 1 })
+    const dom = fakeElement()
+    const { inputs, sink } = track()
+    let current = first
+    new PointerSource(dom.element, () => current, sink)
+
+    dom.dispatch('pointerdown', pointer({ clientX: 150, clientY: 150 }))
+    current = second // a later scroll would change the space; the gesture must not see it
+    dom.dispatch('pointermove', pointer({ clientX: 150, clientY: 150 }))
+    dom.dispatch('pointerup', pointer({ clientX: 150, clientY: 150 }))
+
+    // All three points use the begin-captured origin (50,50) → (100,100), not (150,150).
+    expect(inputs).toEqual([
+      { type: 'begin', pointer: { x: 100, y: 100 }, modifiers: noMods },
+      { type: 'move', pointer: { x: 100, y: 100 }, modifiers: noMods },
+      { type: 'end', pointer: { x: 100, y: 100 }, modifiers: noMods },
+    ])
+  })
+
+  it('does not begin when shouldBegin returns false (e.g. a miss on the chrome)', () => {
+    const dom = fakeElement()
+    const { inputs, sink } = track()
+    new PointerSource(dom.element, getSpace, sink, () => false)
+
+    const event = pointer()
+    dom.dispatch('pointerdown', event)
+
+    expect(inputs).toHaveLength(0)
+    expect(dom.setPointerCapture).not.toHaveBeenCalled()
+    expect(event.preventDefault).not.toHaveBeenCalled()
+  })
+
+  it('passes the raw pointerdown event to shouldBegin before capturing', () => {
+    const dom = fakeElement()
+    const { inputs, sink } = track()
+    const seen: PointerEvent[] = []
+    new PointerSource(dom.element, getSpace, sink, (event) => {
+      seen.push(event)
+      return true
+    })
+
+    const event = pointer()
+    dom.dispatch('pointerdown', event)
+
+    expect(seen).toEqual([event])
+    expect(inputs).toHaveLength(1)
   })
 })
