@@ -36,7 +36,7 @@ declare global {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/e2e/fixtures/transformed-ancestor.html')
   await page.waitForFunction(() => window.placeableReady === true)
 })
 
