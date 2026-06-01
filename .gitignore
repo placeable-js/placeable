@@ -1,6 +1,27 @@
+# Local planning (not published)
 /dev-docs
-/node_modules
-/.pnpm-store
-dist
-coverage
+
+# Dependencies & package managers
+node_modules/
+.pnpm-store/
+
+# Build & test artifacts
+dist/
+coverage/
 *.tsbuildinfo
+*.tgz
+
+# Tool caches (Vite / Vitest)
+.vite/
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+playwright/.cache/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example

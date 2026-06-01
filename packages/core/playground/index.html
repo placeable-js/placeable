@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>placeable — playground</title>
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; }
+
+      :root {
+        --bg: #f8f8f8;
+        --surface: #ffffff;
+        --border: #e2e2e2;
+        --accent: #2563eb;
+        --accent-dim: #1d4ed8;
+        --text: #111;
+        --muted: #666;
+        --panel-w: 260px;
+        --radius: 6px;
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 13px;
+        color: var(--text);
+      }
+
+      body { display: flex; height: 100vh; background: var(--bg); overflow: hidden; }
+
+      /* ── Side panel ── */
+      #panel {
+        width: var(--panel-w);
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        background: var(--surface);
+        border-right: 1px solid var(--border);
+        overflow-y: auto;
+      }
+      .panel-section {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border);
+      }
+      .panel-section h2 {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        color: var(--muted);
+        margin-bottom: 10px;
+      }
+
+      /* ── Controls ── */
+      .radio-group, .checkbox-group { display: flex; flex-direction: column; gap: 5px; }
+      .radio-group label, .checkbox-group label {
+        display: flex; align-items: center; gap: 8px; cursor: pointer;
+        padding: 5px 8px; border-radius: var(--radius);
+        border: 1px solid transparent; transition: background .1s;
+        user-select: none;
+      }
+      .radio-group label:hover, .checkbox-group label:hover { background: #f0f4ff; }
+      .radio-group label.active { background: #eff6ff; border-color: #bfdbfe; color: var(--accent); }
+      .radio-group label input, .checkbox-group label input { display: none; }
+
+      .handle-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        grid-template-rows: repeat(3, 1fr);
+        gap: 4px;
+        width: 96px;
+        margin: 0 auto;
+      }
+      .handle-grid button {
+        aspect-ratio: 1;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--surface);
+        cursor: pointer;
+        font-size: 10px;
+        color: var(--muted);
+        transition: background .1s, border-color .1s, color .1s;
+      }
+      .handle-grid button:hover { background: #f0f4ff; border-color: #93c5fd; }
+      .handle-grid button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+      .handle-grid .center-cell { visibility: hidden; }
+
+      .slider-row { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+      .slider-row label { display: flex; justify-content: space-between; color: var(--muted); }
+      .slider-row input[type=range] { width: 100%; accent-color: var(--accent); }
+
+      /* ── Live readout ── */
+      #readout {
+        font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+        font-size: 11px;
+        line-height: 1.6;
+        color: var(--text);
+        white-space: pre;
+        overflow-x: auto;
+      }
+      .readout-row { display: flex; justify-content: space-between; gap: 12px; }
+      .readout-label { color: var(--muted); }
+      .readout-flash { animation: flash .25s ease-out; }
+      @keyframes flash { 0% { color: var(--accent); } 100% { color: var(--text); } }
+
+      #log {
+        font-family: ui-monospace, 'Cascadia Code', monospace;
+        font-size: 10px;
+        line-height: 1.55;
+        color: var(--muted);
+        overflow-y: auto;
+        max-height: 180px;
+        white-space: pre;
+      }
+      .log-entry { color: var(--text); }
+      .log-entry.latest { color: var(--accent); }
+
+      /* ── Canvas ── */
+      #canvas-wrap {
+        flex: 1;
+        position: relative;
+        overflow: hidden;
+      }
+      #container {
+        position: absolute;
+        inset: 40px;
+        border: 1px dashed var(--border);
+        border-radius: 4px;
+        background: var(--surface);
+        overflow: hidden;
+      }
+      .container-label {
+        position: absolute;
+        top: 6px; left: 8px;
+        font-size: 10px;
+        color: var(--border);
+        pointer-events: none;
+        user-select: none;
+      }
+
+      /* Transformed-ancestor group */
+      #ancestor {
+        position: absolute;
+        left: 160px; top: 120px;
+        transform-origin: 0 0;
+        /* JS sets the transform */
+      }
+
+      #box {
+        position: absolute;
+        left: 0; top: 0;
+        width: 160px; height: 100px;
+        background: var(--accent);
+        border-radius: 4px;
+        touch-action: none;
+        cursor: grab;
+        transition: box-shadow .15s;
+        will-change: transform;
+      }
+      #box:active { cursor: grabbing; }
+      #box.gesture-active { box-shadow: 0 8px 32px rgba(37,99,235,.35); }
+
+      /* Resize / rotate handles rendered as floating dots */
+      .chrome-handle {
+        position: fixed;
+        width: 10px; height: 10px;
+        background: #fff;
+        border: 2px solid var(--accent);
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        transition: opacity .1s;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ═══════════════ Side panel ═══════════════ -->
+    <aside id="panel">
+      <div class="panel-section">
+        <h2>Operation</h2>
+        <div class="radio-group" id="op-group">
+          <label class="active"><input type="radio" name="op" value="drag" checked />🖐 Drag</label>
+          <label><input type="radio" name="op" value="resize" />⤡ Resize</label>
+          <label><input type="radio" name="op" value="rotate" />↻ Rotate</label>
+        </div>
+      </div>
+
+      <div class="panel-section" id="handle-section" style="display:none">
+        <h2>Resize handle</h2>
+        <div class="handle-grid" id="handle-grid">
+          <button type="button" data-h="nw">↖</button><button type="button" data-h="n">↑</button><button type="button" data-h="ne">↗</button>
+          <button type="button" data-h="w">←</button><span class="center-cell"></span><button type="button" data-h="e">→</button>
+          <button type="button" data-h="sw">↙</button><button type="button" data-h="s">↓</button><button type="button" data-h="se" class="active">↘</button>
+        </div>
+        <div class="checkbox-group" style="margin-top:10px">
+          <label><input type="checkbox" id="aspect-lock" /> Lock aspect ratio</label>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h2>Ancestor transform</h2>
+        <div class="checkbox-group">
+          <label><input type="checkbox" id="transform-toggle" /> Enable (rotate + zoom)</label>
+        </div>
+        <div id="transform-controls" style="display:none">
+          <div class="slider-row">
+            <label>Rotation <span id="rot-val">30°</span></label>
+            <input type="range" id="rot-slider" min="-180" max="180" value="30" />
+          </div>
+          <div class="slider-row">
+            <label>Scale <span id="scale-val">1.5×</span></label>
+            <input type="range" id="scale-slider" min="50" max="250" value="150" />
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h2>Live readout</h2>
+        <div id="readout">
+          <div class="readout-row"><span class="readout-label">x</span><span id="r-x">—</span></div>
+          <div class="readout-row"><span class="readout-label">y</span><span id="r-y">—</span></div>
+          <div class="readout-row"><span class="readout-label">w</span><span id="r-w">—</span></div>
+          <div class="readout-row"><span class="readout-label">h</span><span id="r-h">—</span></div>
+          <div class="readout-row"><span class="readout-label">rot</span><span id="r-rot">—</span></div>
+          <div class="readout-row"><span class="readout-label">scale</span><span id="r-scale">—</span></div>
+        </div>
+      </div>
+
+      <div class="panel-section" style="flex:1">
+        <h2>Commit log</h2>
+        <div id="log">idle</div>
+      </div>
+    </aside>
+
+    <!-- ═══════════════ Canvas ═══════════════ -->
+    <div id="canvas-wrap">
+      <div id="container">
+        <span class="container-label">container</span>
+        <div id="ancestor">
+          <div id="box"></div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      import { computeFrame, createPointerGesture, readBoxFromElement } from '/dist/dom/index.js'
+      import { CoordinateSpace, operations } from '/dist/index.js'
+
+      // ── Elements ──────────────────────────────────────────────────────────────
+      const container = document.getElementById('container')
+      const ancestor = document.getElementById('ancestor')
+      const box = document.getElementById('box')
+
+      // ── State ─────────────────────────────────────────────────────────────────
+      let currentHandle = null
+      let gestureHandle = null
+      let ancestorRot = 30    // degrees
+      let ancestorScale = 1.5
+
+      // ── Ancestor transform ────────────────────────────────────────────────────
+      function applyAncestorTransform(enabled) {
+        ancestor.style.transform = enabled
+          ? `rotate(${ancestorRot}deg) scale(${ancestorScale})`
+          : ''
+      }
+
+      // ── CoordinateSpace ───────────────────────────────────────────────────────
+      function makeSpace() {
+        const r = container.getBoundingClientRect()
+        return new CoordinateSpace({ containerOrigin: { x: r.left, y: r.top }, viewScale: 1 })
+      }
+
+      // ── Readout ───────────────────────────────────────────────────────────────
+      function fmt(n) { return typeof n === 'number' ? n.toFixed(1) : '—' }
+      function fmtDeg(rad) { return typeof rad === 'number' ? `${(rad * 180 / Math.PI).toFixed(1)}°` : '—' }
+
+      function updateReadout(b, scale) {
+        document.getElementById('r-x').textContent = fmt(b.x)
+        document.getElementById('r-y').textContent = fmt(b.y)
+        document.getElementById('r-w').textContent = fmt(b.width)
+        document.getElementById('r-h').textContent = fmt(b.height)
+        document.getElementById('r-rot').textContent = fmtDeg(b.rotation)
+        document.getElementById('r-scale').textContent = scale != null ? scale.toFixed(3) : '—'
+      }
+
+      // ── Commit log ────────────────────────────────────────────────────────────
+      const commits = []
+      function pushCommit(commit) {
+        commits.unshift(commit)
+        if (commits.length > 20) commits.pop()
+        const log = document.getElementById('log')
+        log.innerHTML = commits
+          .map((c, i) => {
+            const b = c.box
+            const line = `x:${fmt(b.x)} y:${fmt(b.y)} w:${fmt(b.width)} h:${fmt(b.height)} θ:${fmtDeg(b.rotation)}`
+            return `<div class="log-entry${i === 0 ? ' latest' : ''}">${line}</div>`
+          })
+          .join('')
+      }
+
+      // ── Wire gesture ──────────────────────────────────────────────────────────
+      function wire() {
+        gestureHandle?.destroy()
+
+        const op = document.querySelector('input[name="op"]:checked')?.value ?? 'drag'
+        const handle = currentHandle ?? 'se'
+        const aspect = document.getElementById('aspect-lock').checked
+          ? 'initial'
+          : undefined
+
+        const operation =
+          op === 'drag' ? operations.createDrag()
+          : op === 'resize' ? operations.createResize({ handle, ...(aspect ? { aspect } : {}) })
+          : operations.createRotate()
+
+        gestureHandle = createPointerGesture(box, {
+          operation,
+          space: makeSpace(),
+          container,
+          callbacks: {
+            onStart(snapshot) {
+              box.classList.add('gesture-active')
+              // Show the rendering-scale recovered from the live ancestor transform.
+              const scale = computeFrame(box, container, readBoxFromElement(box)).scale
+              updateReadout(snapshot.box, scale)
+            },
+            onChange(snapshot) {
+              updateReadout(snapshot.box, null)
+            },
+            onCommit(commit) {
+              box.classList.remove('gesture-active')
+              updateReadout(commit.box, null)
+              pushCommit(commit)
+            },
+            onCancel() {
+              box.classList.remove('gesture-active')
+            },
+          },
+        })
+      }
+
+      // ── UI interactions ───────────────────────────────────────────────────────
+      // Operation radio
+      document.getElementById('op-group').addEventListener('change', (e) => {
+        document.querySelectorAll('#op-group label').forEach((l) => { l.classList.remove('active') })
+        e.target.closest('label').classList.add('active')
+        const isResize = e.target.value === 'resize'
+        document.getElementById('handle-section').style.display = isResize ? '' : 'none'
+        wire()
+      })
+
+      // Handle grid
+      document.getElementById('handle-grid').addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-h]')
+        if (!btn) return
+        document.querySelectorAll('.handle-grid button').forEach((b) => { b.classList.remove('active') })
+        btn.classList.add('active')
+        currentHandle = btn.dataset.h
+        wire()
+      })
+
+      // Aspect lock
+      document.getElementById('aspect-lock').addEventListener('change', wire)
+
+      // Ancestor transform toggle
+      const transformToggle = document.getElementById('transform-toggle')
+      const transformControls = document.getElementById('transform-controls')
+      transformToggle.addEventListener('change', () => {
+        const on = transformToggle.checked
+        transformControls.style.display = on ? '' : 'none'
+        applyAncestorTransform(on)
+        wire() // re-measure space + frame
+      })
+
+      // Ancestor sliders
+      document.getElementById('rot-slider').addEventListener('input', (e) => {
+        ancestorRot = Number(e.target.value)
+        document.getElementById('rot-val').textContent = `${ancestorRot}°`
+        applyAncestorTransform(true)
+        wire()
+      })
+      document.getElementById('scale-slider').addEventListener('input', (e) => {
+        ancestorScale = Number(e.target.value) / 100
+        document.getElementById('scale-val').textContent = `${ancestorScale.toFixed(2)}×`
+        applyAncestorTransform(true)
+        wire()
+      })
+
+      // Re-wire when container is resized (updates CoordinateSpace containerOrigin)
+      new ResizeObserver(() => wire()).observe(container)
+
+      // ── Init ──────────────────────────────────────────────────────────────────
+      wire()
+    </script>
+  </body>
+</html>

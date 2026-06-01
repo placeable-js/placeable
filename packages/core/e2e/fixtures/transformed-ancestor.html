@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>placeable — transformed ancestor fixture</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+      }
+      /* The scroll/viewport reference: container space is measured from here. */
+      #container {
+        position: absolute;
+        left: 60px;
+        top: 40px;
+        width: 700px;
+        height: 520px;
+        overflow: hidden;
+        background: #f4f4f5;
+        border: 1px solid #d4d4d8;
+      }
+      /* A transformed ancestor group: uniform 1.5x zoom + 30° rotation. This is
+         the stack `computeFrame` must recover from the live DOM. transform-origin
+         is the top-left so the math is unambiguous. */
+      #canvas {
+        position: absolute;
+        left: 200px;
+        top: 150px;
+        transform: rotate(30deg) scale(1.5);
+        transform-origin: 0 0;
+      }
+      #target {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 80px;
+        height: 40px;
+        background: #2563eb;
+        touch-action: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="container">
+      <div id="canvas">
+        <div id="target"></div>
+      </div>
+    </div>
+
+    <script type="module">
+      import { computeFrame, createPointerGesture, readBoxFromElement } from '/dist/dom/index.js'
+      import { CoordinateSpace, operations } from '/dist/index.js'
+
+      const container = document.getElementById('container')
+      const target = document.getElementById('target')
+
+      const commits = []
+      let handle = null
+
+      function makeSpace() {
+        const rect = container.getBoundingClientRect()
+        return new CoordinateSpace({
+          containerOrigin: { x: rect.left, y: rect.top },
+          viewScale: 1,
+        })
+      }
+
+      window.placeable = {
+        commits,
+        // The rendering scale recovered from the live ancestor transform stack.
+        scale() {
+          return computeFrame(target, container, readBoxFromElement(target)).scale
+        },
+        // Wire a fresh gesture of the given kind and record its single commit.
+        attach(kind) {
+          handle?.destroy()
+          commits.length = 0
+          const operation =
+            kind === 'resize'
+              ? operations.createResize({ handle: 'se' })
+              : operations.createDrag()
+          handle = createPointerGesture(target, {
+            operation,
+            space: makeSpace(),
+            container,
+            callbacks: {
+              onCommit(commit) {
+                commits.push(commit)
+              },
+            },
+          })
+        },
+      }
+      window.placeableReady = true
+    </script>
+  </body>
+</html>
