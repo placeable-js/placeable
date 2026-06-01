@@ -7,6 +7,7 @@ import type {
   GestureCallbacks,
   GestureFrame,
   GestureOperation,
+  GestureTarget,
   Modifier,
 } from '../gesture/types'
 import type { Box } from '../math/types'
@@ -62,9 +63,8 @@ export function createPointerGesture(
   element: HTMLElement,
   options: PointerGestureOptions,
 ): PointerGestureHandle {
+  const writer = new DomTransformWriter(element)
   const session = new GestureSession({
-    operation: options.operation,
-    writer: new DomTransformWriter(element),
     space: options.space,
     ...(options.modifiers !== undefined && { modifiers: options.modifiers }),
     ...(options.bounds !== undefined && { bounds: options.bounds }),
@@ -80,24 +80,35 @@ export function createPointerGesture(
     return options.frame
   }
 
-  const source = new PointerSource(element, options.space, (input) => {
-    switch (input.type) {
-      case 'begin': {
-        const box = readBoxFromElement(element)
-        session.begin(box, input.pointer, input.modifiers, frameAtBegin(box))
-        break
+  const source = new PointerSource(
+    element,
+    () => options.space,
+    (input) => {
+      switch (input.type) {
+        case 'begin': {
+          const startBox = readBoxFromElement(element)
+          const frame = frameAtBegin(startBox)
+          const target: GestureTarget = {
+            startBox,
+            writer,
+            operation: options.operation,
+            ...(frame !== undefined && { frame }),
+          }
+          session.begin(target, input.pointer, input.modifiers)
+          break
+        }
+        case 'move':
+          session.update(input.pointer, input.modifiers)
+          break
+        case 'end':
+          session.end(input.pointer, input.modifiers)
+          break
+        case 'cancel':
+          session.cancel()
+          break
       }
-      case 'move':
-        session.update(input.pointer, input.modifiers)
-        break
-      case 'end':
-        session.end(input.pointer, input.modifiers)
-        break
-      case 'cancel':
-        session.cancel()
-        break
-    }
-  })
+    },
+  )
 
   return {
     destroy(): void {

@@ -16,17 +16,19 @@ import type {
   GesturePhase,
   GestureSnapshot,
   GestureState,
+  GestureTarget,
   Modifier,
   ModifierKeys,
   TransformWriter,
 } from './types'
 
-/** Everything needed to drive one reusable {@link GestureSession}. */
+/**
+ * The cross-gesture concerns of a reusable {@link GestureSession}. The
+ * per-gesture target — `operation`, `writer`, `startBox`, `frame` — is supplied
+ * at {@link GestureSession.begin} via a {@link GestureTarget}, so one session
+ * instance serves every operation and target with no per-gesture reallocation.
+ */
 export interface GestureSessionConfig {
-  /** The gesture kernel (drag/resize/rotate factory output). */
-  readonly operation: GestureOperation
-  /** The DOM-write seam. */
-  readonly writer: TransformWriter
   /** Container ↔ design conversion for the commit/readout boundary. */
   readonly space: CoordinateSpaceLike
   /** Modifier chain, applied in order after the kernel. Defaults to none. */
@@ -48,6 +50,10 @@ interface ActiveGesture {
   readonly frame: GestureFrame
   /** Read-only environment shared by the kernel and modifiers, built once per gesture. */
   readonly ctx: GestureContext
+  /** The DOM-write seam for the grabbed target, captured at `begin`. */
+  readonly writer: TransformWriter
+  /** The gesture kernel for the grabbed handle/operation, captured at `begin`. */
+  readonly operation: GestureOperation
   pointer: Vec2
   modifiers: ModifierKeys
 }
@@ -61,8 +67,6 @@ interface ActiveGesture {
  * {@link TransformWriter}.
  */
 export class GestureSession {
-  readonly #operation: GestureOperation
-  readonly #writer: TransformWriter
   readonly #space: CoordinateSpaceLike
   readonly #bounds: ContainerBox | undefined
   readonly #modifiers: readonly Modifier[]
@@ -77,8 +81,6 @@ export class GestureSession {
   #frameScheduled = false
 
   constructor(config: GestureSessionConfig) {
-    this.#operation = config.operation
-    this.#writer = config.writer
     this.#space = config.space
     this.#bounds = config.bounds
     this.#modifiers = config.modifiers ?? []
@@ -93,28 +95,33 @@ export class GestureSession {
   }
 
   /**
-   * Begins a gesture. `startBox` is the target's current box in the local
-   * frame, and `frame` is the container ↔ local mapping — both gesture-scoped
-   * DOM reads the caller measures once at begin (never read here). `frame`
-   * defaults to {@link identityFrame}. Ignored unless idle.
+   * Begins a gesture against `target`, which bundles the per-gesture
+   * `operation`, `writer`, `startBox`, and `frame` — all gesture-scoped state
+   * the caller supplies once at begin (the DOM reads happen there, never here).
+   * `target.frame` defaults to {@link identityFrame}. Ignored unless idle.
    */
-  begin(
-    startBox: Box,
-    pointer: ContainerPoint,
-    modifiers: ModifierKeys,
-    frame: GestureFrame = identityFrame,
-  ): void {
+  begin(target: GestureTarget, pointer: ContainerPoint, modifiers: ModifierKeys): void {
     if (this.#active !== null) {
       return
     }
+    const frame = target.frame ?? identityFrame
     const ctx: GestureContext =
       this.#bounds !== undefined
         ? { space: this.#space, frame, bounds: this.#bounds }
         : { space: this.#space, frame }
     const pointerStart = frame.pointToLocal(pointer)
-    this.#active = { start: startBox, pointerStart, pointer: pointerStart, modifiers, frame, ctx }
-    this.#writer.begin()
-    this.#callbacks.onStart?.(this.#snapshot(startBox, startBox, frame))
+    this.#active = {
+      start: target.startBox,
+      pointerStart,
+      pointer: pointerStart,
+      modifiers,
+      frame,
+      ctx,
+      writer: target.writer,
+      operation: target.operation,
+    }
+    target.writer.begin()
+    this.#callbacks.onStart?.(this.#snapshot(target.startBox, target.startBox, frame))
   }
 
   /** Records the latest pointer and schedules a frame. Ignored unless active. */
@@ -145,8 +152,8 @@ export class GestureSession {
     active.modifiers = modifiers
 
     const proposed = this.#computeProposed(active)
-    this.#writer.applyBox(proposed)
-    this.#writer.release()
+    active.writer.applyBox(proposed)
+    active.writer.release()
 
     const commit: GestureCommit = {
       box: roundDesignBox(this.#toDesign(proposed, active.frame), this.#rounding),
@@ -161,11 +168,12 @@ export class GestureSession {
    * `onCancel` (nothing to history). Ignored unless active.
    */
   cancel(): void {
-    if (this.#active === null) {
+    const active = this.#active
+    if (active === null) {
       return
     }
     this.#cancelFrame()
-    this.#writer.restore()
+    active.writer.restore()
     this.#reset()
     this.#callbacks.onCancel?.()
   }
@@ -177,7 +185,7 @@ export class GestureSession {
   destroy(): void {
     this.#cancelFrame()
     if (this.#active !== null) {
-      this.#writer.release()
+      this.#active.writer.release()
     }
     this.#reset()
   }
@@ -189,7 +197,7 @@ export class GestureSession {
       return
     }
     const proposed = this.#computeProposed(active)
-    this.#writer.applyBox(proposed)
+    active.writer.applyBox(proposed)
     this.#callbacks.onChange?.(this.#snapshot(proposed, active.start, active.frame))
   }
 
@@ -201,7 +209,7 @@ export class GestureSession {
       pointer: active.pointer,
       modifiers: active.modifiers,
     }
-    const proposed = this.#operation.apply(base, active.ctx)
+    const proposed = active.operation.apply(base, active.ctx)
     const final = runModifiers({ ...base, proposed }, active.ctx, this.#modifiers)
     return final.proposed
   }

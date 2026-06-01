@@ -125,6 +125,26 @@ export interface GestureOperation {
 export type Modifier = (state: GestureState, ctx: GestureContext) => GestureState
 
 /**
+ * The per-gesture target a reusable {@link GestureSession} is pointed at on
+ * `begin`. Bundling `operation` and `writer` here (rather than fixing them at
+ * session construction) is what lets a single session serve drag, resize (per
+ * handle), and rotate across any number of targets without reallocation — the
+ * delegated-chrome model the controller relies on. DOM-free: `writer` and
+ * `operation` are the engine's pure seams, so the session never touches the DOM.
+ *
+ * - `startBox` — the target's current box in its **local** (pre-transform)
+ *   frame, measured once by the caller at `begin` (never re-read mid-gesture).
+ * - `frame` — the container ↔ local mapping for the live ancestor stack;
+ *   defaults to {@link identityFrame} (target laid out directly in container space).
+ */
+export interface GestureTarget {
+  readonly startBox: Box
+  readonly writer: TransformWriter
+  readonly operation: GestureOperation
+  readonly frame?: GestureFrame
+}
+
+/**
  * The DOM-write seam. Implemented by the DOM adapter; mocked in headless tests.
  * Synchronous, no return, no layout reads. Lifecycle per gesture:
  * `begin → applyBox* → (release | restore)`.
