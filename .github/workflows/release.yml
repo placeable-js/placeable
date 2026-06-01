@@ -14,6 +14,10 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    env:
+      # setup-node writes //registry.npmjs.org/:_authToken from NODE_AUTH_TOKEN.
+      # Without this, publish often fails with E404 (npm hides auth errors for scopes).
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,6 +34,9 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Verify npm auth
+        run: npm whoami --registry=https://registry.npmjs.org
 
       - name: Create version PR or publish to npm
         uses: changesets/action@v1

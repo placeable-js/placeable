@@ -1,6 +1,6 @@
 # Local planning (not published)
 /dev-docs
-
+RELEASING.md
 # Dependencies & package managers
 node_modules/
 .pnpm-store/
