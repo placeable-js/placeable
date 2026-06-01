@@ -30,9 +30,5 @@ jobs:
       - run: pnpm test
       - run: pnpm pack:check
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright install --with-deps chromium firefox webkit
       - run: pnpm test:e2e
