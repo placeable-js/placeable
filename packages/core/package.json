@@ -1,6 +1,6 @@
 {
   "name": "@placeable-js/core",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Headless DOM transform core: affine matrix math, oriented boxes, coordinate spaces, and an input-agnostic gesture engine.",
   "license": "MIT",
   "publishConfig": {
