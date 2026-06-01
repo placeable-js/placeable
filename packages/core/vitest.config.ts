@@ -8,7 +8,13 @@ export default defineConfig({
       provider: 'v8',
       include: ['src/**/*.ts'],
       // Re-export barrels, type-only files, and test helpers carry no logic to cover.
-      exclude: ['src/**/*.test.ts', 'src/**/index.ts', 'src/math/types.ts', 'src/test-utils/**'],
+      exclude: [
+        'src/**/*.test.ts',
+        'src/**/index.ts',
+        'src/math/types.ts',
+        'src/gesture/types.ts',
+        'src/test-utils/**',
+      ],
       thresholds: {
         statements: 100,
         branches: 95,

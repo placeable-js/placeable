@@ -1,4 +1,5 @@
 export * from './coords'
+export * from './gesture'
 export type {
   Box,
   BoxCorners,

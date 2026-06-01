@@ -1,0 +1,60 @@
+{
+  "name": "@placeable-js/core",
+  "version": "0.0.0",
+  "description": "Headless DOM transform core: affine matrix math, oriented boxes, coordinate spaces, and an input-agnostic gesture engine.",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/placeable-js/placeable.git"
+  },
+  "homepage": "https://github.com/placeable-js/placeable#readme",
+  "bugs": {
+    "url": "https://github.com/placeable-js/placeable/issues"
+  },
+  "keywords": [
+    "drag",
+    "resize",
+    "rotate",
+    "transform",
+    "gesture",
+    "pointer-events",
+    "design-editor",
+    "headless"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./dom": {
+      "types": "./dist/dom/index.d.ts",
+      "import": "./dist/dom/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsup",
+    "prepublishOnly": "pnpm build",
+    "dev:watch": "tsup --watch",
+    "dev:serve": "node e2e/static-server.mjs",
+    "dev:play": "node scripts/dev-play.mjs",
+    "pack:check": "pnpm build && node scripts/pack-check.mjs",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "pnpm build && playwright test",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.dom.json"
+  }
+}
