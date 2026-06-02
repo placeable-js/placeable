@@ -156,10 +156,15 @@ test('a ResizeObserver on the target auto-syncs the chrome size', async ({ page 
 test('manual syncChrome() re-glues after an external idle mutation', async ({ page }) => {
   await select(page)
   await page.evaluate(() => {
-    const target = document.getElementById('target')
-    if (target) target.style.left = '90px'
+    // Move the canvas ancestor's CSS `left` — the target's container-space
+    // position changes but neither the target's own size nor the container's
+    // size changes, so no ResizeObserver fires and no scroll event is emitted.
+    // The chrome is therefore NOT auto-synced by the viewport observer.
+    const canvas = document.getElementById('canvas')
+    if (canvas) canvas.style.left = '250px'
   })
-  // Move-by-left is not observed (no RO size change), so the chrome is stale...
+  await flushFrames(page)
+  // Chrome is stale — the viewport observer did not fire.
   const targetMoved = await center(page, '#target')
   const boxStale = await center(page, '[data-placeable-box]')
   expect(Math.abs(boxStale.x - targetMoved.x)).toBeGreaterThan(10)
