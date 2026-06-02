@@ -81,7 +81,8 @@ function makeChromeRoot(rect: { left: number; top: number } = { left: 0, top: 0 
   const removeEventListener = vi.fn((type: string) => handlers.delete(type))
   const root = {
     style: { touchAction: 'auto' },
-    getBoundingClientRect: () => ({ left: rect.left, top: rect.top, width: 400, height: 300 }) as DOMRect,
+    getBoundingClientRect: () =>
+      ({ left: rect.left, top: rect.top, width: 400, height: 300 }) as DOMRect,
     addEventListener: (type: string, handler: (event: PointerEvent) => void) =>
       handlers.set(type, handler),
     removeEventListener,
