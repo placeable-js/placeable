@@ -26,6 +26,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      - run: pnpm --filter @placeable-js/core build
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm pack:check
