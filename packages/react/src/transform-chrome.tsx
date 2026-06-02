@@ -101,9 +101,11 @@ const defaultHandleVisual = (size: number, custom?: CSSProperties): CSSPropertie
  * clicks. Handles carry only `data-placeable-handle`; the delegated source reads
  * `closest('[data-placeable-handle]')`, so there are no per-handle listeners.
  *
- * The overlay must be a **sibling of the scrolled content inside a positioned
- * container** (so the box's `translate` is in container space and handle sizes
- * stay constant under zoom). Use `syncChrome()` after external idle mutations.
+ * Mount under a **positioned host** as a **sibling of the scrollport** (the
+ * element passed as `container`), not inside the scrolling element — same layout
+ * as the playground and e2e fixture. The controller measures container space from
+ * the scrollport and anchors overlay `translate` to the chrome root's live
+ * layout origin. Use `syncChrome()` after external idle mutations.
  */
 export function TransformChrome(props: TransformChromeProps): ReactNode {
   const { chrome } = props

@@ -48,8 +48,6 @@ interface ActiveGesture {
   readonly pointerStart: Vec2
   /** Container ↔ local mapping captured for this gesture (DOM state at `begin`). */
   readonly frame: GestureFrame
-  /** Read-only environment shared by the kernel and modifiers, built once per gesture. */
-  readonly ctx: GestureContext
   /** The DOM-write seam for the grabbed target, captured at `begin`. */
   readonly writer: TransformWriter
   /** The gesture kernel for the grabbed handle/operation, captured at `begin`. */
@@ -105,18 +103,13 @@ export class GestureSession {
       return
     }
     const frame = target.frame ?? identityFrame
-    const ctx: GestureContext =
-      this.#bounds !== undefined
-        ? { space: this.#space, frame, bounds: this.#bounds }
-        : { space: this.#space, frame }
     const pointerStart = frame.pointToLocal(pointer)
     this.#active = {
       start: target.startBox,
       pointerStart,
       pointer: pointerStart,
-      modifiers,
       frame,
-      ctx,
+      modifiers,
       writer: target.writer,
       operation: target.operation,
     }
@@ -201,7 +194,14 @@ export class GestureSession {
     this.#callbacks.onChange?.(this.#snapshot(proposed, active.start, active.frame))
   }
 
+  #buildCtx(frame: GestureFrame): GestureContext {
+    return this.#bounds !== undefined
+      ? { space: this.#space, frame, bounds: this.#bounds }
+      : { space: this.#space, frame }
+  }
+
   #computeProposed(active: ActiveGesture): Box {
+    const ctx = this.#buildCtx(active.frame)
     const base: GestureState = {
       start: active.start,
       proposed: active.start,
@@ -209,8 +209,8 @@ export class GestureSession {
       pointer: active.pointer,
       modifiers: active.modifiers,
     }
-    const proposed = active.operation.apply(base, active.ctx)
-    const final = runModifiers({ ...base, proposed }, active.ctx, this.#modifiers)
+    const proposed = active.operation.apply(base, ctx)
+    const final = runModifiers({ ...base, proposed }, ctx, this.#modifiers)
     return final.proposed
   }
 

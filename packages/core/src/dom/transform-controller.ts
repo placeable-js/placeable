@@ -138,6 +138,8 @@ export function createTransformController(
 
   let target: HTMLElement | null = null
   let overlayNode: HTMLElement | null = null
+  /** Chrome root from {@link attachChrome}; anchor for overlay `translate` in container space. */
+  let chromeRoot: HTMLElement | null = null
   let chromeBox: ContainerBox | null = null
   let chromeSource: PointerSource | null = null
   let pendingTarget: GestureTarget | null = null
@@ -156,14 +158,85 @@ export function createTransformController(
   }
   space = buildSpace()
 
-  const applyChromeBox = (box: ContainerBox): void => {
-    chromeBox = box
+  /**
+   * The overlay control box's top-left in **container** space, expressed relative to
+   * the chrome root's current layout origin (not assumed `(0,0)`). When the root
+   * is a direct child of a scrollport it scrolls with content; subtracting the
+   * root's live container-space offset keeps `translate` correct for both that
+   * layout and the recommended sibling-of-content host wiring.
+   */
+  const overlayTranslate = (box: ContainerBox): { x: number; y: number } => {
+    if (chromeRoot === null) {
+      return { x: box.x, y: box.y }
+    }
+    const containerRect = container.getBoundingClientRect()
+    const rootRect = chromeRoot.getBoundingClientRect()
+    return {
+      x: box.x - (rootRect.left - containerRect.left),
+      y: box.y - (rootRect.top - containerRect.top),
+    }
+  }
+
+  /** Hidden or zero-size chrome roots yield a bogus root rect; skip until laid out. */
+  const isChromeRootMeasurable = (): boolean => {
+    if (chromeRoot === null) {
+      return true
+    }
+    const style = getComputedStyle(chromeRoot)
+    if (style.display === 'none' || style.visibility === 'hidden') {
+      return false
+    }
+    const rect = chromeRoot.getBoundingClientRect()
+    return rect.width > 0 || rect.height > 0
+  }
+
+  /**
+   * Applies chrome position during an active gesture in a single pass.
+   *
+   * The rendered center of the target is read directly from
+   * `getBoundingClientRect` — no `readBoxFromElement`, no frame reconstruction.
+   * Size and rotation come from the frozen session snapshot so every kernel
+   * (move, resize, rotate) stays frame-consistent. The `isChromeRootMeasurable`
+   * guard is intentionally omitted: the chrome root is always visible during an
+   * active gesture.
+   *
+   * Cost: 2 rect reads always; 3 if `chromeRoot` is not at the container origin.
+   */
+  const applyGestureChrome = (fromSession: ContainerBox): void => {
+    chromeBox = fromSession
     if (overlayNode === null) {
       return
     }
+    const containerRect = container.getBoundingClientRect()
+    const targetRect = (target as HTMLElement).getBoundingClientRect()
+    // Container-space center of the painted target.
+    const cx = targetRect.left + targetRect.width / 2 - containerRect.left
+    const cy = targetRect.top + targetRect.height / 2 - containerRect.top
+    // Chrome top-left = center minus half the session's container-space size.
+    let tx = cx - fromSession.width / 2
+    let ty = cy - fromSession.height / 2
+    // Subtract chrome root offset (zero in the standard sibling layout).
+    if (chromeRoot !== null) {
+      const rootRect = chromeRoot.getBoundingClientRect()
+      tx -= rootRect.left - containerRect.left
+      ty -= rootRect.top - containerRect.top
+    }
+    const degrees = fromSession.rotation * RAD_TO_DEG
+    const style = overlayNode.style
+    style.transform = `translate(${tx}px, ${ty}px) rotate(${degrees}deg)`
+    style.width = `${fromSession.width}px`
+    style.height = `${fromSession.height}px`
+  }
+
+  const applyChromeBox = (box: ContainerBox): void => {
+    chromeBox = box
+    if (overlayNode === null || !isChromeRootMeasurable()) {
+      return
+    }
+    const { x, y } = overlayTranslate(box)
     const degrees = box.rotation * RAD_TO_DEG
     const style = overlayNode.style
-    style.transform = `translate(${box.x}px, ${box.y}px) rotate(${degrees}deg)`
+    style.transform = `translate(${x}px, ${y}px) rotate(${degrees}deg)`
     style.width = `${box.width}px`
     style.height = `${box.height}px`
   }
@@ -200,12 +273,11 @@ export function createTransformController(
     ...(options.scheduler !== undefined && { scheduler: options.scheduler }),
     callbacks: {
       onStart: (snapshot) => {
-        applyChromeBox(snapshot.container)
+        applyGestureChrome(snapshot.container)
         hostCallbacks.onStart?.(snapshot)
       },
       onChange: (snapshot) => {
-        // Imperative reposition only — no store push, so React never renders per frame.
-        applyChromeBox(snapshot.container)
+        applyGestureChrome(snapshot.container)
         hostCallbacks.onChange?.(snapshot)
       },
       onCommit: (commit) => {
@@ -231,7 +303,7 @@ export function createTransformController(
   const observer: ViewportObserver = observeViewport(
     container,
     () => {
-      // Mid-gesture scroll-follow is out of Phase 3 (frame is begin-captured).
+      // Mid-gesture scroll is not reconciled (pointer space is begin-captured).
       if (session.phase === 'active') {
         return
       }
@@ -289,20 +361,25 @@ export function createTransformController(
     setTarget(next: HTMLElement | null): void {
       target = next
       observer.observeTarget(next)
-      if (next !== null) {
-        applyChromeBox(idleChromeBox(next, container))
-      } else {
+      if (next === null) {
         chromeBox = null
       }
+      // Notify the host first so it can show the chrome root; applying before
+      // that (or while display:none) measures a zero root rect and mis-translates.
       setState({ target: next, visible: next !== null, handleConfig })
+      if (next !== null) {
+        applyChromeBox(idleChromeBox(next, container))
+      }
     },
     attachChrome(root: HTMLElement): () => void {
+      chromeRoot = root
       const source = new PointerSource(root, buildSpace, onInput, shouldBegin)
       chromeSource = source
       return () => {
         source.destroy()
         if (chromeSource === source) {
           chromeSource = null
+          chromeRoot = null
         }
       }
     },
@@ -324,6 +401,7 @@ export function createTransformController(
     destroy(): void {
       chromeSource?.destroy()
       chromeSource = null
+      chromeRoot = null
       observer.dispose()
       session.destroy()
     },
