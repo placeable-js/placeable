@@ -81,7 +81,7 @@ function makeChromeRoot(rect: { left: number; top: number } = { left: 0, top: 0 
   const removeEventListener = vi.fn((type: string) => handlers.delete(type))
   const root = {
     style: { touchAction: 'auto' },
-    getBoundingClientRect: () => ({ left: rect.left, top: rect.top, width: 400, height: 300 }),
+    getBoundingClientRect: () => ({ left: rect.left, top: rect.top, width: 400, height: 300 }) as DOMRect,
     addEventListener: (type: string, handler: (event: PointerEvent) => void) =>
       handlers.set(type, handler),
     removeEventListener,
@@ -101,7 +101,7 @@ function makeTarget() {
     offsetWidth: 100,
     offsetHeight: 100,
     parentElement: null as unknown,
-    getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }),
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }) as DOMRect,
   }
 }
 
@@ -310,7 +310,7 @@ describe('createTransformController scroll/resize reconciliation', () => {
   it('does not write a misaligned overlay when the chrome root has no layout box', () => {
     const overlay = makeOverlay()
     const chrome = makeChromeRoot()
-    chrome.node.getBoundingClientRect = () => ({ left: 0, top: 0, width: 0, height: 0 })
+    chrome.node.getBoundingClientRect = () => ({ left: 0, top: 0, width: 0, height: 0 }) as DOMRect
 
     const controller = createTransformController({
       container: container as unknown as Element,
@@ -327,9 +327,9 @@ describe('createTransformController scroll/resize reconciliation', () => {
     const chrome = makeChromeRoot()
     let measurable = false
     chrome.node.getBoundingClientRect = () =>
-      measurable
+      (measurable
         ? { left: 0, top: 0, width: 400, height: 300 }
-        : { left: 0, top: 0, width: 0, height: 0 }
+        : { left: 0, top: 0, width: 0, height: 0 }) as DOMRect
     const baseGetComputedStyle = globalRef.getComputedStyle as (el: unknown) => CSSStyleDeclaration
     globalRef.getComputedStyle = (el: unknown) => {
       if (el === chrome.node) {
@@ -369,7 +369,7 @@ describe('createTransformController scroll/resize reconciliation', () => {
 
     // Simulate scroll: chrome root moved up in the scrollable layer; target
     // re-measured at container y=60 in visible space.
-    target.getBoundingClientRect = () => ({ left: 0, top: 60, width: 100, height: 100 })
+    target.getBoundingClientRect = () => ({ left: 0, top: 60, width: 100, height: 100 }) as DOMRect
     controller.syncChrome()
 
     const transform = overlay.transforms.at(-1) ?? ''
