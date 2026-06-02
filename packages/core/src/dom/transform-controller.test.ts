@@ -308,10 +308,16 @@ describe('createTransformController scroll/resize reconciliation', () => {
     expect(pushes).toBe(0) // and zero re-renders
   })
 
-  it('does not write a misaligned overlay when the chrome root has no layout box', () => {
+  it('does not write when the chrome root is display:none', () => {
     const overlay = makeOverlay()
     const chrome = makeChromeRoot()
-    chrome.node.getBoundingClientRect = () => ({ left: 0, top: 0, width: 0, height: 0 }) as DOMRect
+    const baseGetComputedStyle = globalRef.getComputedStyle as (el: unknown) => CSSStyleDeclaration
+    globalRef.getComputedStyle = (el: unknown) => {
+      if (el === chrome.node) {
+        return { ...baseGetComputedStyle(el), display: 'none' } as CSSStyleDeclaration
+      }
+      return baseGetComputedStyle(el)
+    }
 
     const controller = createTransformController({
       container: container as unknown as Element,

@@ -177,17 +177,19 @@ export function createTransformController(
     }
   }
 
-  /** Hidden or zero-size chrome roots yield a bogus root rect; skip until laid out. */
+  /**
+   * A `display:none` or `visibility:hidden` chrome root has not been revealed by
+   * the host yet; `overlayTranslate` would read a stale/zero root rect and
+   * mis-position the overlay. Intrinsic size is intentionally **not** checked —
+   * the chrome root may legitimately have zero dimensions when all its children
+   * are `position:absolute`, which is the normal React component layout.
+   */
   const isChromeRootMeasurable = (): boolean => {
     if (chromeRoot === null) {
       return true
     }
     const style = getComputedStyle(chromeRoot)
-    if (style.display === 'none' || style.visibility === 'hidden') {
-      return false
-    }
-    const rect = chromeRoot.getBoundingClientRect()
-    return rect.width > 0 || rect.height > 0
+    return style.display !== 'none' && style.visibility !== 'hidden'
   }
 
   /**
