@@ -1,0 +1,68 @@
+{
+  "name": "@placeable-js/react",
+  "version": "0.1.0",
+  "description": "Thin, SSR-safe React adapter for @placeable-js/core: useTransformController + <TransformChrome /> for drag/resize/rotate chrome.",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/placeable-js/placeable.git"
+  },
+  "homepage": "https://github.com/placeable-js/placeable#readme",
+  "bugs": {
+    "url": "https://github.com/placeable-js/placeable/issues"
+  },
+  "keywords": [
+    "react",
+    "drag",
+    "resize",
+    "rotate",
+    "transform",
+    "gesture",
+    "design-editor",
+    "headless"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsup",
+    "prepublishOnly": "pnpm build",
+    "dev:watch": "tsup --watch",
+    "pack:check": "pnpm build && node scripts/pack-check.mjs",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "pnpm build && node e2e/build-fixture.mjs && playwright test",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "dependencies": {
+    "@placeable-js/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.1.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}

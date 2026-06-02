@@ -3,19 +3,19 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>placeable — playground</title>
+    <title>placeable — Phase 3 playground</title>
     <style>
       *, *::before, *::after { box-sizing: border-box; margin: 0; }
 
       :root {
-        --bg: #f8f8f8;
+        --bg: #f4f4f5;
         --surface: #ffffff;
-        --border: #e2e2e2;
+        --border: #e4e4e7;
         --accent: #2563eb;
         --accent-dim: #1d4ed8;
-        --text: #111;
-        --muted: #666;
-        --panel-w: 260px;
+        --text: #18181b;
+        --muted: #71717a;
+        --panel-w: 280px;
         --radius: 6px;
         font-family: system-ui, -apple-system, sans-serif;
         font-size: 13px;
@@ -24,13 +24,11 @@
 
       body { display: flex; height: 100vh; background: var(--bg); overflow: hidden; }
 
-      /* ── Side panel ── */
       #panel {
         width: var(--panel-w);
         flex-shrink: 0;
         display: flex;
         flex-direction: column;
-        gap: 0;
         background: var(--surface);
         border-right: 1px solid var(--border);
         overflow-y: auto;
@@ -43,163 +41,232 @@
         font-size: 10px;
         font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: .08em;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+      .panel-section p.hint {
+        font-size: 11px;
+        line-height: 1.45;
         color: var(--muted);
         margin-bottom: 10px;
       }
 
-      /* ── Controls ── */
-      .radio-group, .checkbox-group { display: flex; flex-direction: column; gap: 5px; }
-      .radio-group label, .checkbox-group label {
-        display: flex; align-items: center; gap: 8px; cursor: pointer;
-        padding: 5px 8px; border-radius: var(--radius);
-        border: 1px solid transparent; transition: background .1s;
+      .btn-row { display: flex; flex-wrap: wrap; gap: 6px; }
+      button.btn {
+        padding: 6px 10px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+        font: inherit;
+        cursor: pointer;
+        color: var(--text);
+      }
+      button.btn:hover { background: #f0f4ff; border-color: #93c5fd; }
+      button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      button.btn.primary:hover { background: var(--accent-dim); }
+
+      .checkbox-group { display: flex; flex-direction: column; gap: 5px; }
+      .checkbox-group label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
         user-select: none;
       }
-      .radio-group label:hover, .checkbox-group label:hover { background: #f0f4ff; }
-      .radio-group label.active { background: #eff6ff; border-color: #bfdbfe; color: var(--accent); }
-      .radio-group label input, .checkbox-group label input { display: none; }
-
-      .handle-grid {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        grid-template-rows: repeat(3, 1fr);
-        gap: 4px;
-        width: 96px;
-        margin: 0 auto;
-      }
-      .handle-grid button {
-        aspect-ratio: 1;
-        border: 1px solid var(--border);
-        border-radius: 4px;
-        background: var(--surface);
-        cursor: pointer;
-        font-size: 10px;
-        color: var(--muted);
-        transition: background .1s, border-color .1s, color .1s;
-      }
-      .handle-grid button:hover { background: #f0f4ff; border-color: #93c5fd; }
-      .handle-grid button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-      .handle-grid .center-cell { visibility: hidden; }
 
       .slider-row { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
       .slider-row label { display: flex; justify-content: space-between; color: var(--muted); }
-      .slider-row input[type=range] { width: 100%; accent-color: var(--accent); }
+      .slider-row input[type='range'] { width: 100%; accent-color: var(--accent); }
 
-      /* ── Live readout ── */
       #readout {
         font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
         font-size: 11px;
         line-height: 1.6;
-        color: var(--text);
-        white-space: pre;
-        overflow-x: auto;
       }
       .readout-row { display: flex; justify-content: space-between; gap: 12px; }
       .readout-label { color: var(--muted); }
-      .readout-flash { animation: flash .25s ease-out; }
-      @keyframes flash { 0% { color: var(--accent); } 100% { color: var(--text); } }
 
       #log {
         font-family: ui-monospace, 'Cascadia Code', monospace;
         font-size: 10px;
         line-height: 1.55;
         color: var(--muted);
+        max-height: 160px;
         overflow-y: auto;
-        max-height: 180px;
-        white-space: pre;
       }
       .log-entry { color: var(--text); }
       .log-entry.latest { color: var(--accent); }
 
-      /* ── Canvas ── */
-      #canvas-wrap {
-        flex: 1;
-        position: relative;
-        overflow: hidden;
+      .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 600;
+        background: #eff6ff;
+        color: var(--accent);
+        border: 1px solid #bfdbfe;
       }
+      .badge.idle { background: #f4f4f5; color: var(--muted); border-color: var(--border); }
+
+      /* ── Canvas ── */
+      #canvas-wrap { flex: 1; position: relative; min-width: 0; padding: 24px; }
+
+      /* Host wrapper: chrome is a sibling of the scrollport, not inside it. */
+      #stage {
+        position: relative;
+        width: 100%;
+        height: 100%;
+      }
+
       #container {
-        position: absolute;
-        inset: 40px;
+        position: relative;
+        width: 100%;
+        height: 100%;
         border: 1px dashed var(--border);
-        border-radius: 4px;
+        border-radius: 8px;
         background: var(--surface);
-        overflow: hidden;
+        overflow: auto;
       }
       .container-label {
-        position: absolute;
-        top: 6px; left: 8px;
+        position: sticky;
+        top: 0;
+        left: 0;
+        z-index: 1;
+        display: inline-block;
+        margin: 8px;
+        padding: 2px 8px;
         font-size: 10px;
-        color: var(--border);
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.9);
+        border-radius: 4px;
         pointer-events: none;
         user-select: none;
       }
 
-      /* Transformed-ancestor group */
+      #content {
+        position: relative;
+        width: 1400px;
+        height: 1000px;
+      }
+
       #ancestor {
         position: absolute;
-        left: 160px; top: 120px;
+        left: 220px;
+        top: 180px;
         transform-origin: 0 0;
-        /* JS sets the transform */
       }
 
       #box {
         position: absolute;
-        left: 0; top: 0;
-        width: 160px; height: 100px;
-        background: var(--accent);
-        border-radius: 4px;
+        left: 0;
+        top: 0;
+        width: 160px;
+        height: 100px;
+        background: linear-gradient(135deg, #3b82f6, #2563eb);
+        border-radius: 6px;
+        box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+        cursor: pointer;
         touch-action: none;
-        cursor: grab;
-        transition: box-shadow .15s;
-        will-change: transform;
       }
-      #box:active { cursor: grabbing; }
-      #box.gesture-active { box-shadow: 0 8px 32px rgba(37,99,235,.35); }
+      #box.selected { outline: 2px solid rgba(37, 99, 235, 0.35); outline-offset: 2px; }
+      #box.gesture-active { box-shadow: 0 8px 32px rgba(37, 99, 235, 0.4); }
 
-      /* Resize / rotate handles rendered as floating dots */
+      /* ── Chrome overlay (sibling of scroll content, container space) ── */
+      #chrome-root {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 10;
+        display: none;
+      }
+
+      #chrome-box {
+        position: absolute;
+        top: 0;
+        left: 0;
+        transform-origin: 50% 50%;
+        box-sizing: border-box;
+        pointer-events: none;
+        outline: 1px solid var(--accent);
+        outline-offset: 0;
+      }
+
+      [data-placeable-handle='body'] {
+        position: absolute;
+        inset: 0;
+        pointer-events: auto;
+        cursor: move;
+      }
+
       .chrome-handle {
-        position: fixed;
-        width: 10px; height: 10px;
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        transform: translate(-50%, -50%);
+        pointer-events: auto;
         background: #fff;
         border: 2px solid var(--accent);
-        border-radius: 50%;
-        transform: translate(-50%, -50%);
-        pointer-events: none;
-        transition: opacity .1s;
+        border-radius: 2px;
+        box-sizing: border-box;
       }
+      .chrome-handle[data-placeable-handle='rotate'] {
+        border-radius: 50%;
+        cursor: grab;
+      }
+      .chrome-handle[data-placeable-handle='n'],
+      .chrome-handle[data-placeable-handle='s'] { cursor: ns-resize; }
+      .chrome-handle[data-placeable-handle='e'],
+      .chrome-handle[data-placeable-handle='w'] { cursor: ew-resize; }
+      .chrome-handle[data-placeable-handle='ne'],
+      .chrome-handle[data-placeable-handle='sw'] { cursor: nesw-resize; }
+      .chrome-handle[data-placeable-handle='nw'],
+      .chrome-handle[data-placeable-handle='se'] { cursor: nwse-resize; }
+
+      .chrome-handle[data-placeable-handle='n'] { left: 50%; top: 0; }
+      .chrome-handle[data-placeable-handle='ne'] { left: 100%; top: 0; }
+      .chrome-handle[data-placeable-handle='e'] { left: 100%; top: 50%; }
+      .chrome-handle[data-placeable-handle='se'] { left: 100%; top: 100%; }
+      .chrome-handle[data-placeable-handle='s'] { left: 50%; top: 100%; }
+      .chrome-handle[data-placeable-handle='sw'] { left: 0; top: 100%; }
+      .chrome-handle[data-placeable-handle='w'] { left: 0; top: 50%; }
+      .chrome-handle[data-placeable-handle='nw'] { left: 0; top: 0; }
+      .chrome-handle[data-placeable-handle='rotate'] { left: 50%; top: -24px; }
     </style>
   </head>
   <body>
-    <!-- ═══════════════ Side panel ═══════════════ -->
     <aside id="panel">
       <div class="panel-section">
-        <h2>Operation</h2>
-        <div class="radio-group" id="op-group">
-          <label class="active"><input type="radio" name="op" value="drag" checked />🖐 Drag</label>
-          <label><input type="radio" name="op" value="resize" />⤡ Resize</label>
-          <label><input type="radio" name="op" value="rotate" />↻ Rotate</label>
+        <h2>Phase 3 — TransformController</h2>
+        <p class="hint">
+          One delegated pointer source on the chrome. Grab body / handles to drag, resize, or rotate.
+          The target carries no listeners.
+        </p>
+        <p>Selection: <span id="selection-badge" class="badge idle">none</span></p>
+        <div class="btn-row" style="margin-top: 10px">
+          <button type="button" class="btn" id="btn-clear">Clear selection</button>
+          <button type="button" class="btn" id="btn-sync">syncChrome()</button>
         </div>
       </div>
 
-      <div class="panel-section" id="handle-section" style="display:none">
-        <h2>Resize handle</h2>
-        <div class="handle-grid" id="handle-grid">
-          <button type="button" data-h="nw">↖</button><button type="button" data-h="n">↑</button><button type="button" data-h="ne">↗</button>
-          <button type="button" data-h="w">←</button><span class="center-cell"></span><button type="button" data-h="e">→</button>
-          <button type="button" data-h="sw">↙</button><button type="button" data-h="s">↓</button><button type="button" data-h="se" class="active">↘</button>
+      <div class="panel-section">
+        <h2>Resize options</h2>
+        <div class="checkbox-group">
+          <label><input type="checkbox" id="aspect-lock" /> Lock aspect ratio (initial)</label>
         </div>
-        <div class="checkbox-group" style="margin-top:10px">
-          <label><input type="checkbox" id="aspect-lock" /> Lock aspect ratio</label>
-        </div>
+        <p class="hint" style="margin-top: 8px">Applies to the next gesture after toggle (controller recreated).</p>
       </div>
 
       <div class="panel-section">
         <h2>Ancestor transform</h2>
         <div class="checkbox-group">
-          <label><input type="checkbox" id="transform-toggle" /> Enable (rotate + zoom)</label>
+          <label><input type="checkbox" id="transform-toggle" checked /> Rotate + zoom group</label>
         </div>
-        <div id="transform-controls" style="display:none">
+        <div id="transform-controls">
           <div class="slider-row">
             <label>Rotation <span id="rot-val">30°</span></label>
             <input type="range" id="rot-slider" min="-180" max="180" value="30" />
@@ -208,6 +275,16 @@
             <label>Scale <span id="scale-val">1.5×</span></label>
             <input type="range" id="scale-slider" min="50" max="250" value="150" />
           </div>
+        </div>
+        <p class="hint" style="margin-top: 8px">Idle chrome re-aligns via syncChrome after transform changes.</p>
+      </div>
+
+      <div class="panel-section">
+        <h2>Scrollport</h2>
+        <p class="hint">Scroll the container while selected — chrome follows via observeViewport (no per-frame React).</p>
+        <div class="btn-row">
+          <button type="button" class="btn" id="btn-scroll">Scroll down 120px</button>
+          <button type="button" class="btn" id="btn-nudge">Nudge target +40px → sync</button>
         </div>
       </div>
 
@@ -219,57 +296,70 @@
           <div class="readout-row"><span class="readout-label">w</span><span id="r-w">—</span></div>
           <div class="readout-row"><span class="readout-label">h</span><span id="r-h">—</span></div>
           <div class="readout-row"><span class="readout-label">rot</span><span id="r-rot">—</span></div>
-          <div class="readout-row"><span class="readout-label">scale</span><span id="r-scale">—</span></div>
+          <div class="readout-row"><span class="readout-label">frame scale</span><span id="r-scale">—</span></div>
         </div>
       </div>
 
-      <div class="panel-section" style="flex:1">
+      <div class="panel-section" style="flex: 1">
         <h2>Commit log</h2>
-        <div id="log">idle</div>
+        <div id="log">Select the box, then transform via chrome handles.</div>
       </div>
     </aside>
 
-    <!-- ═══════════════ Canvas ═══════════════ -->
     <div id="canvas-wrap">
-      <div id="container">
-        <span class="container-label">container</span>
-        <div id="ancestor">
-          <div id="box"></div>
+      <div id="stage">
+        <div id="container">
+          <span class="container-label">container (scroll me)</span>
+          <div id="content">
+            <div id="ancestor">
+              <div id="box" title="Click to select"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="chrome-root" data-placeable-chrome>
+          <div id="chrome-box">
+            <div data-placeable-handle="body" aria-label="Drag"></div>
+            <div class="chrome-handle" data-placeable-handle="nw"></div>
+            <div class="chrome-handle" data-placeable-handle="n"></div>
+            <div class="chrome-handle" data-placeable-handle="ne"></div>
+            <div class="chrome-handle" data-placeable-handle="e"></div>
+            <div class="chrome-handle" data-placeable-handle="se"></div>
+            <div class="chrome-handle" data-placeable-handle="s"></div>
+            <div class="chrome-handle" data-placeable-handle="sw"></div>
+            <div class="chrome-handle" data-placeable-handle="w"></div>
+            <div class="chrome-handle" data-placeable-handle="rotate" aria-label="Rotate"></div>
+          </div>
         </div>
       </div>
     </div>
 
     <script type="module">
-      import { computeFrame, createPointerGesture, readBoxFromElement } from '/dist/dom/index.js'
-      import { CoordinateSpace, operations } from '/dist/index.js'
+      import {
+        computeFrame,
+        createTransformController,
+        readBoxFromElement,
+      } from '/dist/dom/index.js'
 
-      // ── Elements ──────────────────────────────────────────────────────────────
       const container = document.getElementById('container')
       const ancestor = document.getElementById('ancestor')
       const box = document.getElementById('box')
+      const chromeRoot = document.getElementById('chrome-root')
+      const chromeBox = document.getElementById('chrome-box')
+      const selectionBadge = document.getElementById('selection-badge')
+      const aspectLock = document.getElementById('aspect-lock')
 
-      // ── State ─────────────────────────────────────────────────────────────────
-      let currentHandle = null
-      let gestureHandle = null
-      let ancestorRot = 30    // degrees
+      let controller = null
+      let ancestorRot = 30
       let ancestorScale = 1.5
+      const commits = []
 
-      // ── Ancestor transform ────────────────────────────────────────────────────
-      function applyAncestorTransform(enabled) {
-        ancestor.style.transform = enabled
-          ? `rotate(${ancestorRot}deg) scale(${ancestorScale})`
-          : ''
+      function fmt(n) {
+        return typeof n === 'number' ? n.toFixed(1) : '—'
       }
-
-      // ── CoordinateSpace ───────────────────────────────────────────────────────
-      function makeSpace() {
-        const r = container.getBoundingClientRect()
-        return new CoordinateSpace({ containerOrigin: { x: r.left, y: r.top }, viewScale: 1 })
+      function fmtDeg(rad) {
+        return typeof rad === 'number' ? `${((rad * 180) / Math.PI).toFixed(1)}°` : '—'
       }
-
-      // ── Readout ───────────────────────────────────────────────────────────────
-      function fmt(n) { return typeof n === 'number' ? n.toFixed(1) : '—' }
-      function fmtDeg(rad) { return typeof rad === 'number' ? `${(rad * 180 / Math.PI).toFixed(1)}°` : '—' }
 
       function updateReadout(b, scale) {
         document.getElementById('r-x').textContent = fmt(b.x)
@@ -280,11 +370,9 @@
         document.getElementById('r-scale').textContent = scale != null ? scale.toFixed(3) : '—'
       }
 
-      // ── Commit log ────────────────────────────────────────────────────────────
-      const commits = []
       function pushCommit(commit) {
         commits.unshift(commit)
-        if (commits.length > 20) commits.pop()
+        if (commits.length > 16) commits.pop()
         const log = document.getElementById('log')
         log.innerHTML = commits
           .map((c, i) => {
@@ -295,29 +383,38 @@
           .join('')
       }
 
-      // ── Wire gesture ──────────────────────────────────────────────────────────
-      function wire() {
-        gestureHandle?.destroy()
+      function applyAncestorTransform(enabled) {
+        ancestor.style.transform = enabled
+          ? `rotate(${ancestorRot}deg) scale(${ancestorScale})`
+          : ''
+        if (controller?.getState().visible) {
+          controller.syncChrome()
+        }
+      }
 
-        const op = document.querySelector('input[name="op"]:checked')?.value ?? 'drag'
-        const handle = currentHandle ?? 'se'
-        const aspect = document.getElementById('aspect-lock').checked
-          ? 'initial'
-          : undefined
+      function updateSelectionUi() {
+        const visible = controller?.getState().visible ?? false
+        chromeRoot.style.display = visible ? 'block' : 'none'
+        box.classList.toggle('selected', visible)
+        if (visible) {
+          selectionBadge.textContent = 'selected'
+          selectionBadge.classList.remove('idle')
+        } else {
+          selectionBadge.textContent = 'none'
+          selectionBadge.classList.add('idle')
+        }
+      }
 
-        const operation =
-          op === 'drag' ? operations.createDrag()
-          : op === 'resize' ? operations.createResize({ handle, ...(aspect ? { aspect } : {}) })
-          : operations.createRotate()
+      function createController() {
+        controller?.destroy()
 
-        gestureHandle = createPointerGesture(box, {
-          operation,
-          space: makeSpace(),
+        const aspect = aspectLock.checked ? 'initial' : undefined
+        controller = createTransformController({
           container,
+          ...(aspect !== undefined && { resize: { aspect } }),
           callbacks: {
             onStart(snapshot) {
               box.classList.add('gesture-active')
-              // Show the rendering-scale recovered from the live ancestor transform.
               const scale = computeFrame(box, container, readBoxFromElement(box)).scale
               updateReadout(snapshot.box, scale)
             },
@@ -334,60 +431,84 @@
             },
           },
         })
+
+        controller.attachChrome(chromeRoot)
+        controller.attachOverlayNode(chromeBox)
+        controller.subscribe(updateSelectionUi)
+
+        const target = controller.getState().target
+        if (target !== null) {
+          controller.setTarget(target)
+        }
+        updateSelectionUi()
       }
 
-      // ── UI interactions ───────────────────────────────────────────────────────
-      // Operation radio
-      document.getElementById('op-group').addEventListener('change', (e) => {
-        document.querySelectorAll('#op-group label').forEach((l) => { l.classList.remove('active') })
-        e.target.closest('label').classList.add('active')
-        const isResize = e.target.value === 'resize'
-        document.getElementById('handle-section').style.display = isResize ? '' : 'none'
-        wire()
+      box.addEventListener('click', (e) => {
+        e.stopPropagation()
+        controller.setTarget(box)
+        const scale = computeFrame(box, container, readBoxFromElement(box)).scale
+        updateReadout(readBoxFromElement(box), scale)
       })
 
-      // Handle grid
-      document.getElementById('handle-grid').addEventListener('click', (e) => {
-        const btn = e.target.closest('button[data-h]')
-        if (!btn) return
-        document.querySelectorAll('.handle-grid button').forEach((b) => { b.classList.remove('active') })
-        btn.classList.add('active')
-        currentHandle = btn.dataset.h
-        wire()
+      container.addEventListener('click', (e) => {
+        if (e.target === container || e.target.closest('#content')) {
+          if (!e.target.closest('#box') && !e.target.closest('[data-placeable-chrome]')) {
+            controller.setTarget(null)
+          }
+        }
       })
 
-      // Aspect lock
-      document.getElementById('aspect-lock').addEventListener('change', wire)
+      document.getElementById('btn-clear').addEventListener('click', () => {
+        controller.setTarget(null)
+      })
 
-      // Ancestor transform toggle
+      document.getElementById('btn-sync').addEventListener('click', () => {
+        controller.syncChrome()
+      })
+
+      document.getElementById('btn-scroll').addEventListener('click', () => {
+        container.scrollTop += 120
+      })
+
+      document.getElementById('btn-nudge').addEventListener('click', () => {
+        const left = Number.parseFloat(box.style.left || '0') || 0
+        box.style.left = `${left + 40}px`
+        controller.syncChrome()
+      })
+
+      aspectLock.addEventListener('change', () => {
+        const target = controller.getState().target
+        createController()
+        if (target !== null) controller.setTarget(target)
+      })
+
       const transformToggle = document.getElementById('transform-toggle')
       const transformControls = document.getElementById('transform-controls')
+
       transformToggle.addEventListener('change', () => {
         const on = transformToggle.checked
         transformControls.style.display = on ? '' : 'none'
         applyAncestorTransform(on)
-        wire() // re-measure space + frame
       })
 
-      // Ancestor sliders
       document.getElementById('rot-slider').addEventListener('input', (e) => {
         ancestorRot = Number(e.target.value)
         document.getElementById('rot-val').textContent = `${ancestorRot}°`
-        applyAncestorTransform(true)
-        wire()
+        if (transformToggle.checked) applyAncestorTransform(true)
       })
+
       document.getElementById('scale-slider').addEventListener('input', (e) => {
         ancestorScale = Number(e.target.value) / 100
         document.getElementById('scale-val').textContent = `${ancestorScale.toFixed(2)}×`
-        applyAncestorTransform(true)
-        wire()
+        if (transformToggle.checked) applyAncestorTransform(true)
       })
 
-      // Re-wire when container is resized (updates CoordinateSpace containerOrigin)
-      new ResizeObserver(() => wire()).observe(container)
-
-      // ── Init ──────────────────────────────────────────────────────────────────
-      wire()
+      applyAncestorTransform(true)
+      createController()
+      controller.setTarget(box)
+      const initial = readBoxFromElement(box)
+      const scale = computeFrame(box, container, initial).scale
+      updateReadout(initial, scale)
     </script>
   </body>
 </html>

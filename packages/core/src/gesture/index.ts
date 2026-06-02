@@ -18,6 +18,7 @@ export type {
   GesturePhase,
   GestureSnapshot,
   GestureState,
+  GestureTarget,
   Modifier,
   ModifierKeys,
   TransformWriter,

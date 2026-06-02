@@ -1,21 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import { pixelRounding, type RoundingPolicy } from '../coords/rounding'
 import { CoordinateSpace } from '../coords/space'
-import { containerBox, containerPoint } from '../coords/types'
+import { type ContainerPoint, containerBox, containerPoint } from '../coords/types'
 import type { Box } from '../math/types'
 import { frameOf } from '../test-utils/frames'
 import { noModifiers, translate } from '../test-utils/input'
 import { ManualScheduler } from '../test-utils/manual-scheduler'
 import { RecordingWriter } from '../test-utils/recording-writer'
 import { bounds as boundsModifier } from './modifiers/bounds'
+import { createDrag } from './operations/drag'
 import { createResize } from './operations/resize'
 import { GestureSession, type GestureSessionConfig } from './session'
 import type {
   FrameScheduler,
   GestureCallbacks,
   GestureCommit,
+  GestureFrame,
+  GestureOperation,
   GestureSnapshot,
+  GestureTarget,
   Modifier,
+  TransformWriter,
 } from './types'
 
 interface Events {
@@ -30,6 +35,16 @@ interface SetupOptions {
   bounds?: Box
   modifiers?: readonly Modifier[]
   rounding?: RoundingPolicy
+}
+
+/** Bundles the per-gesture target now that `operation`/`writer` live on `begin`. */
+function target(
+  writer: TransformWriter,
+  startBox: Box,
+  operation: GestureOperation = translate,
+  frame?: GestureFrame,
+): GestureTarget {
+  return { startBox, writer, operation, ...(frame !== undefined && { frame }) }
 }
 
 function setup(options: SetupOptions = {}) {
@@ -49,8 +64,6 @@ function setup(options: SetupOptions = {}) {
     },
   }
   const config: GestureSessionConfig = {
-    operation: translate,
-    writer,
     space,
     scheduler,
     callbacks,
@@ -58,15 +71,23 @@ function setup(options: SetupOptions = {}) {
     ...(options.modifiers !== undefined && { modifiers: options.modifiers }),
     ...(options.rounding !== undefined && { rounding: options.rounding }),
   }
-  return { session: new GestureSession(config), writer, scheduler, events }
+  const session = new GestureSession(config)
+  /** Begins a gesture with the recording writer and the default translate kernel. */
+  const begin = (
+    box: Box,
+    pointer: ContainerPoint,
+    operation: GestureOperation = translate,
+    frame?: GestureFrame,
+  ) => session.begin(target(writer, box, operation, frame), pointer, noModifiers)
+  return { session, writer, scheduler, events, begin }
 }
 
 const start: Box = { x: 10, y: 10, width: 50, height: 30, rotation: 0 }
 
 describe('GestureSession lifecycle', () => {
   it('captures the start box and fires onStart before any write', () => {
-    const { session, writer, events } = setup()
-    session.begin(start, containerPoint(100, 100), noModifiers)
+    const { session, writer, events, begin } = setup()
+    begin(start, containerPoint(100, 100))
 
     expect(session.phase).toBe('active')
     expect(writer.beginCount).toBe(1)
@@ -77,8 +98,8 @@ describe('GestureSession lifecycle', () => {
   })
 
   it('coalesces many updates into one write and one onChange per frame', () => {
-    const { session, writer, scheduler, events } = setup()
-    session.begin(start, containerPoint(100, 100), noModifiers)
+    const { writer, scheduler, events, begin, session } = setup()
+    begin(start, containerPoint(100, 100))
     session.update(containerPoint(110, 100), noModifiers)
     session.update(containerPoint(120, 100), noModifiers)
     session.update(containerPoint(130, 100), noModifiers)
@@ -97,8 +118,8 @@ describe('GestureSession lifecycle', () => {
   })
 
   it('commits once on end, in design space, syncing the final write', () => {
-    const { session, writer, scheduler, events } = setup()
-    session.begin(start, containerPoint(100, 100), noModifiers)
+    const { session, writer, scheduler, events, begin } = setup()
+    begin(start, containerPoint(100, 100))
     session.update(containerPoint(130, 120), noModifiers)
     scheduler.flush()
     session.end(containerPoint(130, 120), noModifiers)
@@ -116,8 +137,8 @@ describe('GestureSession lifecycle', () => {
   })
 
   it('runs a final pass on end even when no frame fired, without an onChange', () => {
-    const { session, writer, events } = setup()
-    session.begin(start, containerPoint(100, 100), noModifiers)
+    const { session, writer, events, begin } = setup()
+    begin(start, containerPoint(100, 100))
     session.update(containerPoint(140, 100), noModifiers) // schedules, never flushed
     session.end(containerPoint(140, 100), noModifiers)
 
@@ -127,8 +148,8 @@ describe('GestureSession lifecycle', () => {
   })
 
   it('cancel reverts the DOM and emits nothing to history', () => {
-    const { session, writer, scheduler, events } = setup()
-    session.begin(start, containerPoint(100, 100), noModifiers)
+    const { session, writer, scheduler, events, begin } = setup()
+    begin(start, containerPoint(100, 100))
     session.update(containerPoint(130, 100), noModifiers)
     scheduler.flush()
     session.cancel()
@@ -141,10 +162,10 @@ describe('GestureSession lifecycle', () => {
   })
 
   it('is reusable for another gesture after a commit', () => {
-    const { session, events } = setup()
-    session.begin(start, containerPoint(0, 0), noModifiers)
+    const { session, events, begin } = setup()
+    begin(start, containerPoint(0, 0))
     session.end(containerPoint(10, 0), noModifiers)
-    session.begin(start, containerPoint(0, 0), noModifiers)
+    begin(start, containerPoint(0, 0))
     session.end(containerPoint(20, 0), noModifiers)
 
     expect(events.commit).toHaveLength(2)
@@ -153,14 +174,37 @@ describe('GestureSession lifecycle', () => {
   })
 
   it('is reusable for another gesture after a cancel', () => {
-    const { session, events } = setup()
-    session.begin(start, containerPoint(0, 0), noModifiers)
+    const { session, events, begin } = setup()
+    begin(start, containerPoint(0, 0))
     session.cancel()
-    session.begin(start, containerPoint(0, 0), noModifiers)
+    begin(start, containerPoint(0, 0))
     session.end(containerPoint(5, 0), noModifiers)
 
     expect(events.cancel).toBe(1)
     expect(events.commit).toHaveLength(1)
+  })
+
+  it('drives two operations through one reusable session (drag then resize)', () => {
+    // The decisive seam check: one session instance serves a different
+    // operation/target on each begin, with independent commits — the property
+    // the delegated-chrome model depends on.
+    const { session, writer, events } = setup()
+    const box: Box = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
+
+    session.begin(target(writer, box, createDrag()), containerPoint(0, 0), noModifiers)
+    session.end(containerPoint(20, 0), noModifiers)
+
+    session.begin(
+      target(writer, box, createResize({ handle: 'e' })),
+      containerPoint(100, 50),
+      noModifiers,
+    )
+    session.end(containerPoint(120, 50), noModifiers)
+
+    expect(events.commit).toHaveLength(2)
+    expect(events.commit[0]?.box).toEqual({ ...box, x: 20 }) // dragged +20
+    expect(events.commit[1]?.box.width).toBe(120) // east edge driven +20
+    expect(events.commit[1]?.box.x).toBe(0) // west edge anchored
   })
 })
 
@@ -175,9 +219,9 @@ describe('GestureSession guards', () => {
   })
 
   it('ignores a second begin while active', () => {
-    const { session, events } = setup()
-    session.begin(start, containerPoint(0, 0), noModifiers)
-    session.begin({ ...start, x: 999 }, containerPoint(0, 0), noModifiers)
+    const { events, begin } = setup()
+    begin(start, containerPoint(0, 0))
+    begin({ ...start, x: 999 }, containerPoint(0, 0))
     expect(events.start).toHaveLength(1)
     expect(events.start[0]?.startBox.x).toBe(10)
   })
@@ -190,8 +234,8 @@ describe('GestureSession guards', () => {
   })
 
   it('releases the writer on destroy during a gesture and is idempotent', () => {
-    const { session, writer, events } = setup()
-    session.begin(start, containerPoint(0, 0), noModifiers)
+    const { session, writer, events, begin } = setup()
+    begin(start, containerPoint(0, 0))
     session.destroy()
     session.destroy()
 
@@ -217,8 +261,8 @@ describe('GestureSession guards', () => {
       },
       cancel: () => {},
     }
-    const session = new GestureSession({ operation: translate, writer, space, scheduler: leaky })
-    session.begin(start, containerPoint(0, 0), noModifiers)
+    const session = new GestureSession({ space, scheduler: leaky })
+    session.begin(target(writer, start), containerPoint(0, 0), noModifiers)
     session.update(containerPoint(10, 0), noModifiers)
     session.cancel()
 
@@ -233,15 +277,15 @@ describe('GestureSession configuration', () => {
     const space = new CoordinateSpace({ containerOrigin: { x: 0, y: 0 }, viewScale: 1 })
     const writer = new RecordingWriter()
     const scheduler = new ManualScheduler()
-    const session = new GestureSession({ operation: translate, writer, space, scheduler })
+    const session = new GestureSession({ space, scheduler })
 
     expect(session.phase).toBe('idle')
     expect(() => {
-      session.begin(start, containerPoint(0, 0), noModifiers)
+      session.begin(target(writer, start), containerPoint(0, 0), noModifiers)
       session.update(containerPoint(10, 0), noModifiers)
       scheduler.flush()
       session.end(containerPoint(10, 0), noModifiers)
-      session.begin(start, containerPoint(0, 0), noModifiers)
+      session.begin(target(writer, start), containerPoint(0, 0), noModifiers)
       session.cancel()
     }).not.toThrow()
     expect(writer.releaseCount).toBe(1)
@@ -250,11 +294,7 @@ describe('GestureSession configuration', () => {
 
   it('falls back to the rAF scheduler when none is provided', () => {
     const space = new CoordinateSpace({ containerOrigin: { x: 0, y: 0 }, viewScale: 1 })
-    const session = new GestureSession({
-      operation: translate,
-      writer: new RecordingWriter(),
-      space,
-    })
+    const session = new GestureSession({ space })
     expect(session.phase).toBe('idle')
   })
 
@@ -262,14 +302,8 @@ describe('GestureSession configuration', () => {
     const space = new CoordinateSpace({ containerOrigin: { x: 0, y: 0 }, viewScale: 1 })
     const writer = new RecordingWriter()
     const scheduler = new ManualScheduler()
-    const session = new GestureSession({
-      operation: translate,
-      writer,
-      space,
-      scheduler,
-      callbacks: {},
-    })
-    session.begin(start, containerPoint(0, 0), noModifiers)
+    const session = new GestureSession({ space, scheduler, callbacks: {} })
+    session.begin(target(writer, start), containerPoint(0, 0), noModifiers)
     session.update(containerPoint(10, 0), noModifiers)
     expect(() => scheduler.flush()).not.toThrow()
     expect(writer.applied).toHaveLength(1)
@@ -277,12 +311,12 @@ describe('GestureSession configuration', () => {
 
   it('threads bounds and the modifier chain through the context', () => {
     const region: Box = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
-    const { session, scheduler, events } = setup({
+    const { scheduler, events, begin, session } = setup({
       bounds: region,
       modifiers: [boundsModifier],
     })
     const edge: Box = { x: 90, y: 0, width: 20, height: 20, rotation: 0 }
-    session.begin(edge, containerPoint(0, 0), noModifiers)
+    begin(edge, containerPoint(0, 0))
     session.update(containerPoint(20, 0), noModifiers) // would translate to x=110
     scheduler.flush()
     session.end(containerPoint(20, 0), noModifiers)
@@ -291,8 +325,8 @@ describe('GestureSession configuration', () => {
   })
 
   it('applies the rounding policy to the commit but not to onChange', () => {
-    const { session, scheduler, events } = setup({ rounding: pixelRounding() })
-    session.begin(start, containerPoint(0, 0), noModifiers)
+    const { scheduler, events, begin, session } = setup({ rounding: pixelRounding() })
+    begin(start, containerPoint(0, 0))
     session.update(containerPoint(10.6, 0), noModifiers)
     scheduler.flush()
     session.end(containerPoint(10.6, 0), noModifiers)
@@ -304,8 +338,8 @@ describe('GestureSession configuration', () => {
   it('converts the commit into design space under a non-identity viewScale', () => {
     // Local boxes are container px under the identity frame; at viewScale 2 they
     // are halved into design px. A container delta of 20 is a design delta of 10.
-    const { session, events } = setup({ viewScale: 2 })
-    session.begin({ ...start, x: 0, y: 0 }, containerPoint(0, 0), noModifiers)
+    const { events, begin, session } = setup({ viewScale: 2 })
+    begin({ ...start, x: 0, y: 0 }, containerPoint(0, 0))
     session.end(containerPoint(20, 0), noModifiers)
 
     expect(events.commit[0]?.box.x).toBe(10)
@@ -322,8 +356,6 @@ describe('GestureSession with a per-gesture matrixFrame', () => {
     const space = new CoordinateSpace({ containerOrigin: { x: 0, y: 0 }, viewScale: 1 })
     const commits: GestureCommit[] = []
     const session = new GestureSession({
-      operation: createResize({ handle: 'e' }),
-      writer,
       space,
       scheduler,
       callbacks: { onCommit: (commit) => commits.push(commit) },
@@ -331,7 +363,11 @@ describe('GestureSession with a per-gesture matrixFrame', () => {
 
     const box: Box = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
     // The east handle sits at local (100,50) → container (50,25); drag it +20 local (+10 container).
-    session.begin(box, containerPoint(50, 25), noModifiers, frame)
+    session.begin(
+      target(writer, box, createResize({ handle: 'e' }), frame),
+      containerPoint(50, 25),
+      noModifiers,
+    )
     session.end(containerPoint(60, 25), noModifiers)
 
     // Local width grows by 20 → 120; west edge fixed. Readout: container = local×0.5,
@@ -351,8 +387,6 @@ describe('GestureSession with a per-gesture matrixFrame', () => {
     const space = new CoordinateSpace({ containerOrigin: { x: 0, y: 0 }, viewScale: 2 })
     const commits: GestureCommit[] = []
     const session = new GestureSession({
-      operation: createResize({ handle: 'e' }),
-      writer,
       space,
       scheduler,
       callbacks: { onCommit: (commit) => commits.push(commit) },
@@ -360,7 +394,11 @@ describe('GestureSession with a per-gesture matrixFrame', () => {
 
     const box: Box = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
     // East handle at local (100,50) → container (200,100); drag +40 container (+20 local).
-    session.begin(box, containerPoint(200, 100), noModifiers, frame)
+    session.begin(
+      target(writer, box, createResize({ handle: 'e' }), frame),
+      containerPoint(200, 100),
+      noModifiers,
+    )
     session.end(containerPoint(240, 100), noModifiers)
 
     // Local width 100→120; container = local×2 (width 240); design = container÷2 ⇒ design = local.

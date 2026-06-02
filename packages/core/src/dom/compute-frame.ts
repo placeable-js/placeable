@@ -47,16 +47,31 @@ export interface ComputedFrame {
  */
 export function computeFrame(target: Element, container: Element, box: Box): ComputedFrame {
   const linear = ancestorLinear(target, container)
+  return {
+    frame: reanchorFrame(linear, target, container, box),
+    scale: Math.hypot(linear.a, linear.b),
+  }
+}
 
+/**
+ * Rebuilds only the translation anchor of a {@link GestureFrame} from a live
+ * `getBoundingClientRect` read while reusing a pre-measured ancestor **linear**
+ * part, avoiding a full ancestor-stack walk. Useful when the linear part is
+ * cached but the translation must be refreshed (e.g. after an idle layout
+ * change). Used internally by {@link computeFrame}.
+ */
+export function reanchorFrame(
+  linear: Matrix,
+  target: Element,
+  container: Element,
+  box: Box,
+): GestureFrame {
   const targetRect = target.getBoundingClientRect()
   const containerRect = container.getBoundingClientRect()
-  // Rendered box center in container space (client center minus container origin).
   const renderedCenter: Vec2 = {
     x: targetRect.left + targetRect.width / 2 - containerRect.left,
     y: targetRect.top + targetRect.height / 2 - containerRect.top,
   }
-
-  // Anchor the linear part at the center correspondence to recover translation.
   const localCenter = applyToPoint(linear, center(box))
   const containerFromLocal: Matrix = {
     a: linear.a,
@@ -66,11 +81,7 @@ export function computeFrame(target: Element, container: Element, box: Box): Com
     e: renderedCenter.x - localCenter.x,
     f: renderedCenter.y - localCenter.y,
   }
-
-  return {
-    frame: matrixFrame(invert(containerFromLocal)),
-    scale: Math.hypot(linear.a, linear.b),
-  }
+  return matrixFrame(invert(containerFromLocal))
 }
 
 /**
@@ -78,7 +89,7 @@ export function computeFrame(target: Element, container: Element, box: Box): Com
  * of `target` up to but excluding `container`, outermost last so that
  * `applyToPoint` composes them in render order.
  */
-function ancestorLinear(target: Element, container: Element): Matrix {
+export function ancestorLinear(target: Element, container: Element): Matrix {
   let accumulated = identity()
   for (let node = target.parentElement; node !== null && node !== container; ) {
     const transform = getComputedStyle(node).transform
